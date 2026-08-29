@@ -163,7 +163,7 @@ export default function App() {
     if (!joined) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -236,7 +236,7 @@ export default function App() {
     const reconnectTimer = setInterval(() => {
       if (joined && wsRef.current && wsRef.current.readyState === WebSocket.CLOSED) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
         const newWs = new WebSocket(wsUrl);
         wsRef.current = newWs;
 

@@ -7,7 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, path: '/ws' });
 
 const PORT = 3000;
 
@@ -196,8 +196,8 @@ wss.on("connection", (ws) => {
         }
 
         // AI mention check
-        if (payload.content.toLowerCase().includes('@ai') || payload.content.toLowerCase().includes('@bot')) {
-          const promptQuery = payload.content.replace(/@ai|@bot/gi, '').trim();
+        if (payload.content.toLowerCase().includes('@ai') || payload.content.toLowerCase().includes('@bot') || payload.content.toLowerCase().includes('@kepler')) {
+          const promptQuery = payload.content.replace(/@ai|@bot|@kepler/gi, '').trim();
           if (promptQuery) {
             try {
               const aiSender = { id: 'ai_bot', name: 'Gemini AI', avatar: '✨', color: '#8b5cf6', isBot: true };
@@ -208,7 +208,7 @@ wss.on("connection", (ws) => {
               });
 
               const response = await ai.models.generateContent({
-                model: 'gemini-3.7-flash',
+                model: 'gemini-2.5-flash',
                 contents: promptQuery,
                 config: {
                   systemInstruction: "You are PulseBot, a helpful, witty, and concise AI assistant inside a real-time group chat. Keep responses engaging, formatted nicely with markdown if helpful, and friendly."
@@ -414,36 +414,40 @@ app.post("/api/room/:roomId/message", async (req, res) => {
   }
 
   // AI mention check
-  if (content.toLowerCase().includes('@ai') || content.toLowerCase().includes('@bot')) {
-    const promptQuery = content.replace(/@ai|@bot/gi, '').trim();
+  if (content.toLowerCase().includes('@ai') || content.toLowerCase().includes('@bot') || content.toLowerCase().includes('@kepler')) {
+    const promptQuery = content.replace(/@ai|@bot|@kepler/gi, '').trim();
     if (promptQuery) {
-      try {
-        const aiSender = { id: 'ai_bot', name: 'Gemini AI', avatar: '✨', color: '#8b5cf6', isBot: true };
-        broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: true } });
+      // Run AI generation asynchronously to avoid blocking the HTTP response
+      (async () => {
+        try {
+          const aiSender = { id: 'ai_bot', name: 'Gemini AI', avatar: '✨', color: '#8b5cf6', isBot: true };
+          broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: true } });
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: promptQuery,
-          config: {
-            systemInstruction: "You are PulseBot, a helpful, witty, and concise AI assistant inside a real-time group chat. Keep responses engaging, formatted nicely with markdown if helpful, and friendly."
-          }
-        });
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: promptQuery,
+            config: {
+              systemInstruction: "You are PulseBot, a helpful, witty, and concise AI assistant inside a real-time group chat. Keep responses engaging, formatted nicely with markdown if helpful, and friendly."
+            }
+          });
 
-        const aiMsg: Message = {
-          id: 'msg_ai_' + Date.now(),
-          room: roomId,
-          sender: aiSender,
-          content: response.text || "I'm here to help!",
-          type: 'text',
-          timestamp: Date.now()
-        };
+          const aiMsg: Message = {
+            id: 'msg_ai_' + Date.now(),
+            room: roomId,
+            sender: aiSender,
+            content: response.text || "I'm here to help!",
+            type: 'text',
+            timestamp: Date.now()
+          };
 
-        room.messages.push(aiMsg);
-        broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: false } });
-        broadcastToRoom(roomId, { type: 'new_message', payload: aiMsg });
-      } catch (err) {
-        console.error("AI response error:", err);
-      }
+          room.messages.push(aiMsg);
+          broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: false } });
+          broadcastToRoom(roomId, { type: 'new_message', payload: aiMsg });
+        } catch (err) {
+          console.error("AI response error:", err);
+          broadcastToRoom(roomId, { type: 'typing', payload: { user: { id: 'ai_bot', name: 'Gemini AI' }, isTyping: false } });
+        }
+      })();
     }
   }
 
