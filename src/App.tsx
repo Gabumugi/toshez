@@ -103,6 +103,35 @@ export default function App() {
     setRoomMeta(null);
   };
 
+  // Room state polling and initial fetch fallback
+  useEffect(() => {
+    if (!joined || !roomId) return;
+
+    const fetchRoomState = async () => {
+      try {
+        const res = await fetch(`/api/room/${roomId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && data.messages.length > 0) {
+            setMessages(data.messages);
+          }
+          if (data.users) {
+            setActiveUsers(data.users);
+          }
+          if (data.meta) {
+            setRoomMeta(data.meta);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch room state", e);
+      }
+    };
+
+    fetchRoomState();
+    const pollInterval = setInterval(fetchRoomState, 3000);
+    return () => clearInterval(pollInterval);
+  }, [joined, roomId]);
+
   // Connect WebSocket when joined
   useEffect(() => {
     if (!joined) return;
@@ -242,22 +271,42 @@ export default function App() {
     } catch (e) {}
   };
 
-  const handleSendMessage = (e: React.FormEvent, customType?: 'text' | 'image' | 'video' | 'file' | 'audio', fileMeta?: { content: string; fileName?: string; fileSize?: string }) => {
+  const handleSendMessage = async (e: React.FormEvent, customType?: 'text' | 'image' | 'video' | 'file' | 'audio', fileMeta?: { content: string; fileName?: string; fileSize?: string }) => {
     if (e) e.preventDefault();
     const content = fileMeta ? fileMeta.content : inputText.trim();
     if (!content) return;
 
+    const payloadData = {
+      user,
+      content,
+      type: customType || 'text',
+      fileName: fileMeta?.fileName,
+      fileSize: fileMeta?.fileSize,
+      replyTo: replyingTo ? { id: replyingTo.id, senderName: replyingTo.sender.name, content: replyingTo.content.substring(0, 50) } : undefined
+    };
+
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'message',
-        payload: {
-          content,
-          type: customType || 'text',
-          fileName: fileMeta?.fileName,
-          fileSize: fileMeta?.fileSize,
-          replyTo: replyingTo ? { id: replyingTo.id, senderName: replyingTo.sender.name, content: replyingTo.content.substring(0, 50) } : undefined
-        }
+        payload: payloadData
       }));
+    } else {
+      try {
+        const res = await fetch(`/api/room/${roomId}/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payloadData)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.message) {
+            setMessages(prev => [...prev, data.message]);
+            playPop();
+          }
+        }
+      } catch (err) {
+        console.error("Failed to send message via REST fallback", err);
+      }
     }
 
     setInputText('');
@@ -429,7 +478,7 @@ export default function App() {
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-white">PulseChat</h1>
             <p className="text-sm text-slate-400">
-              Passwordless & loginless browser chat with public rooms, private passcodes, and rich media support.
+              Passwordless & Loginless Browser Chat.
             </p>
           </div>
 
@@ -437,7 +486,7 @@ export default function App() {
             {/* Identity Card */}
             <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Your Identity</span>
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">Identity</span>
                 <button 
                   onClick={randomizeProfile}
                   className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition"
@@ -467,7 +516,7 @@ export default function App() {
 
             {/* Room Selection */}
             <div className="space-y-2">
-              <label className="text-xs font-medium uppercase tracking-wider text-slate-400">Room Code or Name</label>
+              <label className="text-xs font-medium uppercase tracking-wider text-slate-400">Room Name</label>
               <div className="relative">
                 <Compass className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                 <input
@@ -489,7 +538,7 @@ export default function App() {
                   type="password"
                   value={roomPasscode}
                   onChange={(e) => setRoomPasscode(e.target.value)}
-                  placeholder="Optional room passcode"
+                  placeholder="Optional Passcode"
                   className="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition"
                 />
               </div>
@@ -550,14 +599,14 @@ export default function App() {
             <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-indigo-400" /> Create Custom Room
+                  <Plus className="w-5 h-5 text-indigo-400" /> Create Room
                 </h3>
                 <button onClick={() => setShowCreateRoomModal(false)} className="text-slate-400 hover:text-white">✕</button>
               </div>
 
               <form onSubmit={handleCreateRoomSubmit} className="space-y-4">
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 font-medium">Room ID / Slug</label>
+                  <label className="text-xs text-slate-400 font-medium"> Room ID</label>
                   <input
                     type="text"
                     value={newRoomIdInput}
@@ -588,7 +637,7 @@ export default function App() {
                     className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-indigo-500"
                   />
                   <label htmlFor="isPrivate" className="text-sm text-slate-300 font-medium flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" /> Private Room (Requires Passcode)
+                    <Lock className="w-3.5 h-3.5 text-amber-400" /> Private Room 
                   </label>
                 </div>
 
@@ -719,7 +768,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-sm font-medium text-white truncate max-w-[120px]">{user.name}</div>
-              <div className="text-[11px] text-slate-400">Passwordless Guest</div>
+              <div className="text-[11px] text-slate-400">Guest</div>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -762,7 +811,7 @@ export default function App() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Live
                 </span>
               </h2>
-              <p className="text-xs text-slate-400">Responsive media chat • Type <code className="text-indigo-400 font-mono">@ai</code> for Gemini</p>
+              <p className="text-xs text-slate-400">Media Chat <code className="text-indigo-400 font-mono">@keplerai</code> for ENB</p>
             </div>
           </div>
 
@@ -845,7 +894,9 @@ export default function App() {
                     {isBot && <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded text-[10px]">AI Bot</span>}
                     {isAnnouncement && <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded text-[10px] font-bold">Announcement</span>}
                     <span>•</span>
-                    <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span title={`Sent at ${new Date(msg.timestamp).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}, ${new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}>
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                     {isMe && (
                       <span className="inline-flex items-center ml-1 text-xs" title={msg.seenBy && msg.seenBy.length > 0 ? `Seen by other users` : 'Delivered'}>
                         {msg.seenBy && msg.seenBy.length > 0 ? (
@@ -1103,7 +1154,7 @@ export default function App() {
           </form>
           <div className="text-center mt-2">
             <span className="text-[11px] text-slate-500">
-              Passwordless & Loginless • Images, Videos & Docs fully responsive • Type <code className="text-indigo-400">@ai [question]</code> to ask Gemini
+              Passwordless & Loginless <code className="text-indigo-400">@KEPLER [question]</code> Camp Codes
             </span>
           </div>
         </div>

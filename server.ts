@@ -341,6 +341,95 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", activeRooms: rooms.size, roomsList: Array.from(roomMetas.values()) });
 });
 
+app.get("/api/room/:roomId", (req, res) => {
+  const roomId = req.params.roomId.toLowerCase().replace(/[^a-z0-9-_]/g, '');
+  const room = getRoom(roomId);
+  const meta = roomMetas.get(roomId);
+  res.json({
+    messages: room.messages,
+    users: Array.from(room.users.values()).map(u => ({ id: u.id, name: u.name, avatar: u.avatar, color: u.color })),
+    meta
+  });
+});
+
+app.post("/api/room/:roomId/message", async (req, res) => {
+  const roomId = req.params.roomId.toLowerCase().replace(/[^a-z0-9-_]/g, '');
+  const { user, content, type, fileName, fileSize, replyTo, isAnnouncement } = req.body;
+  if (!user || !content) {
+    return res.status(400).json({ error: "Missing user or content" });
+  }
+
+  const room = getRoom(roomId);
+  const newMsg: Message = {
+    id: 'msg_' + Math.random().toString(36).substring(2, 9) + Date.now(),
+    room: roomId,
+    sender: user,
+    content,
+    fileName,
+    fileSize,
+    type: type || 'text',
+    timestamp: Date.now(),
+    replyTo,
+    isAnnouncement
+  };
+
+  room.messages.push(newMsg);
+  if (room.messages.length > 200) room.messages.shift();
+
+  broadcastToRoom(roomId, {
+    type: 'new_message',
+    payload: newMsg
+  });
+
+  if (isAnnouncement) {
+    rooms.forEach((rState, rId) => {
+      if (rId !== roomId) {
+        rState.messages.push(newMsg);
+        broadcastToRoom(rId, {
+          type: 'new_message',
+          payload: newMsg
+        });
+      }
+    });
+  }
+
+  // AI mention check
+  if (content.toLowerCase().includes('@ai') || content.toLowerCase().includes('@bot')) {
+    const promptQuery = content.replace(/@ai|@bot/gi, '').trim();
+    if (promptQuery) {
+      try {
+        const aiSender = { id: 'ai_bot', name: 'Gemini AI', avatar: '✨', color: '#8b5cf6', isBot: true };
+        broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: true } });
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.7-flash',
+          contents: promptQuery,
+          config: {
+            systemInstruction: "You are PulseBot, a helpful, witty, and concise AI assistant inside a real-time group chat. Keep responses engaging, formatted nicely with markdown if helpful, and friendly."
+          }
+        });
+
+        const aiMsg: Message = {
+          id: 'msg_ai_' + Date.now(),
+          room: roomId,
+          sender: aiSender,
+          content: response.text || "I'm here to help!",
+          type: 'text',
+          timestamp: Date.now()
+        };
+
+        room.messages.push(aiMsg);
+        broadcastToRoom(roomId, { type: 'typing', payload: { user: aiSender, isTyping: false } });
+        broadcastToRoom(roomId, { type: 'new_message', payload: aiMsg });
+      } catch (err) {
+        console.error("AI response error:", err);
+      }
+    }
+  }
+
+  res.json({ success: true, message: newMsg });
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
