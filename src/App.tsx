@@ -91,10 +91,36 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
+  const [previewUsers, setPreviewUsers] = useState<{id: string; name: string; avatar: string; color: string}[]>([]);
+
   // Save user profile changes
   useEffect(() => {
     localStorage.setItem('pulsechat_user', JSON.stringify(user));
   }, [user]);
+
+  // Fetch preview users for lobby screen
+  useEffect(() => {
+    if (joined || !roomId) {
+      setPreviewUsers([]);
+      return;
+    }
+    const fetchPreview = async () => {
+      try {
+        const res = await fetch(`/api/room/${roomId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.users) {
+            setPreviewUsers(data.users);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    fetchPreview();
+    const pollInterval = setInterval(fetchPreview, 3000);
+    return () => clearInterval(pollInterval);
+  }, [joined, roomId]);
 
   const handleLeave = () => {
     setJoined(false);
@@ -446,41 +472,61 @@ export default function App() {
     });
   };
 
-  const handleCreateRoomSubmit = (e: React.FormEvent) => {
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRoomIdInput.trim()) return;
 
     const cleanId = newRoomIdInput.toLowerCase().replace(/[^a-z0-9-_]/g, '');
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'create_room',
-        payload: {
+    try {
+      const res = await fetch('/api/room/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           roomId: cleanId,
           name: newRoomNameInput.trim() || cleanId,
           isPrivate: newRoomIsPrivate,
           passcode: newRoomIsPrivate ? newRoomPasscode : undefined,
           user
+        })
+      });
+      if (res.ok) {
+        setRoomId(cleanId);
+        if (newRoomIsPrivate) {
+          setRoomPasscode(newRoomPasscode);
+        } else {
+          setRoomPasscode('');
         }
-      }));
+        setShowCreateRoomModal(false);
+        setJoined(true);
+      }
+    } catch (err) {
+      console.error("Failed to create room", err);
+      setRoomId(cleanId);
+      if (newRoomIsPrivate) setRoomPasscode(newRoomPasscode);
+      setShowCreateRoomModal(false);
+      setJoined(true);
     }
   };
 
   // 1. Setup / Lobby screen if not joined
   if (!joined) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-indigo-950/50 via-slate-950 to-slate-950 -z-10" />
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex overflow-hidden">
         
-        <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-8 shadow-2xl space-y-6">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 text-3xl shadow-inner mb-2">
-              ⚡
+        {/* Main Content */}
+        <div className="flex-1 flex items-center justify-center p-4 relative overflow-y-auto">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-indigo-950/50 via-slate-950 to-slate-950 -z-10" />
+          
+          <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-800/80 rounded-2xl p-8 shadow-2xl space-y-6 my-auto">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 text-3xl shadow-inner mb-2">
+                ⚡
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-white">PulseChat</h1>
+              <p className="text-sm text-slate-400">
+                Passwordless & Loginless Browser Chat.
+              </p>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">PulseChat</h1>
-            <p className="text-sm text-slate-400">
-              Passwordless & Loginless Browser Chat.
-            </p>
-          </div>
 
           <div className="space-y-4">
             {/* Identity Card */}
@@ -674,6 +720,52 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
+        
+        {/* ONLINE NOW Sidebar (Lobby preview) */}
+        <div className={`w-80 bg-slate-900 border-l border-slate-800 flex flex-col transition-all duration-300 hidden lg:flex`}>
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Compass className="w-4 h-4 text-indigo-400" />
+              Lobby: #{roomId || '...'}
+            </h3>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span className="uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" /> ONLINE NOW ({previewUsers.length})
+              </span>
+              {previewUsers.length > 0 && <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+            </div>
+
+            {previewUsers.length === 0 ? (
+              <div className="text-sm text-slate-500 italic mt-4 text-center">No one is currently in this room.</div>
+            ) : (
+              <div className="space-y-2 mt-2">
+                {previewUsers.map((u, i) => (
+                  <div key={u.id + i} className="flex items-center gap-3 p-2 rounded-xl bg-slate-950/40 border border-slate-800/50">
+                    <div 
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shadow-inner border border-white/5"
+                      style={{ backgroundColor: u.color + '33' }}
+                    >
+                      {u.avatar}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-200 truncate flex items-center gap-1.5">
+                        {u.name}
+                      </div>
+                      <div className="text-[11px] text-emerald-400 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     );
   }
@@ -879,7 +971,7 @@ export default function App() {
               <div 
                 key={msg.id} 
                 id={`msg_${msg.id}`}
-                className={`flex gap-3 max-w-3xl ${isMe ? 'ml-auto flex-row-reverse' : ''}`}
+                className={`flex gap-3 max-w-3xl animate-fade-in-up ${isMe ? 'ml-auto flex-row-reverse' : ''}`}
               >
                 <div 
                   className={`${settings.compactMode ? 'w-8 h-8 rounded-lg text-base mt-0.5' : 'w-10 h-10 rounded-xl text-xl mt-1'} flex items-center justify-center shrink-0 shadow-md border border-white/10`}

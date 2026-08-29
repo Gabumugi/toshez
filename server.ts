@@ -341,6 +341,26 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", activeRooms: rooms.size, roomsList: Array.from(roomMetas.values()) });
 });
 
+app.post("/api/room/create", (req, res) => {
+  const { roomId, name, isPrivate, passcode, user } = req.body;
+  const cleanId = (roomId || '').toLowerCase().replace(/[^a-z0-9-_]/g, '');
+  if (!cleanId) {
+    return res.status(400).json({ error: "Invalid room ID" });
+  }
+
+  roomMetas.set(cleanId, {
+    id: cleanId,
+    name: name || cleanId,
+    isPrivate: !!isPrivate,
+    passcode: passcode || undefined,
+    createdBy: user?.name || 'Anonymous',
+    createdAt: Date.now()
+  });
+
+  const room = getRoom(cleanId);
+  res.json({ success: true, roomId: cleanId, meta: roomMetas.get(cleanId) });
+});
+
 app.get("/api/room/:roomId", (req, res) => {
   const roomId = req.params.roomId.toLowerCase().replace(/[^a-z0-9-_]/g, '');
   const room = getRoom(roomId);
