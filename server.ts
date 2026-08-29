@@ -463,8 +463,26 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    
+    // Serve static files with caching for assets, but no caching for index.html
+    app.use(express.static(distPath, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else if (path.includes('/assets/')) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }));
+
+    app.get('*', (req, res, next) => {
+      // If the request is for a missing asset or API route, return 404 instead of index.html
+      if (req.path.startsWith('/api/') || req.path.startsWith('/assets/') || req.path.match(/\.[a-zA-Z0-9]+$/)) {
+        return res.status(404).send('Not found');
+      }
+      
+      // Serve index.html for all other routes (SPA navigation) with no-cache
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
