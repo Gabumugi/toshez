@@ -175,11 +175,24 @@ export default function App() {
 
     ws.onclose = () => {
       setIsConnected(false);
-      setMessages([]);
-      setActiveUsers([]);
     };
 
+    // Auto-reconnect timer if disconnected while joined
+    const reconnectTimer = setInterval(() => {
+      if (joined && wsRef.current && wsRef.current.readyState === WebSocket.CLOSED) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        const newWs = new WebSocket(wsUrl);
+        wsRef.current = newWs;
+
+        newWs.onopen = ws.onopen;
+        newWs.onmessage = ws.onmessage;
+        newWs.onclose = ws.onclose;
+      }
+    }, 3000);
+
     return () => {
+      clearInterval(reconnectTimer);
       ws.close();
     };
   }, [joined, roomId]);
