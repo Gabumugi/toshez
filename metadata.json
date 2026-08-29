@@ -1,0 +1,6 @@
+{
+  "name": "PulseChat",
+  "description": "A passwordless and loginless browser-based real-time chat application with instant room sharing, rich media, and AI assistant integration.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
