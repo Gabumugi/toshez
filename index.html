@@ -9,9 +9,68 @@
     <meta property="og:description" content="A passwordless and loginless browser-based real-time chat application with instant room sharing, rich media, and AI assistant integration." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      body {
+        margin: 0;
+        background-color: #020617; /* bg-slate-950 */
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #f1f5f9;
+      }
+      .critical-splash {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-image: radial-gradient(circle at top, rgba(30, 27, 75, 0.5), #020617, #020617);
+        padding: 1rem;
+      }
+      .critical-splash-card {
+        width: 100%;
+        max-width: 28rem;
+        background-color: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(30, 41, 59, 0.8);
+        border-radius: 1rem;
+        padding: 2rem;
+        text-align: center;
+      }
+      .critical-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 4rem;
+        height: 4rem;
+        border-radius: 1rem;
+        background-color: rgba(79, 70, 229, 0.2);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        color: #818cf8;
+        font-size: 1.875rem;
+        margin-bottom: 0.5rem;
+      }
+      .critical-title {
+        font-size: 1.875rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem 0;
+        letter-spacing: -0.025em;
+        color: white;
+      }
+      .critical-subtitle {
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+        color: #94a3b8; /* text-slate-400 */
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="critical-splash">
+        <div class="critical-splash-card">
+          <div class="critical-icon">⚡</div>
+          <h1 class="critical-title">PulseChat</h1>
+          <p class="critical-subtitle">Passwordless & Loginless Browser Chat.</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
