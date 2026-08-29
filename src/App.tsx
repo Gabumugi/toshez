@@ -4,7 +4,7 @@ import {
   Send, Users, Sparkles, Image as ImageIcon, Video, FileText, Mic, StopCircle, 
   Smile, Share2, Copy, Check, MessageSquare, ArrowLeft, 
   RefreshCw, Radio, Compass, ShieldCheck, Terminal, CornerDownLeft, Trash2, Pin,
-  Lock, Globe, Bell, Megaphone, Plus, LogIn, Settings
+  Lock, Globe, Bell, Megaphone, Plus, LogIn, Settings, Search, ChevronDown
 } from 'lucide-react';
 import { User, Message, RoomMeta } from './types';
 
@@ -52,7 +52,7 @@ export default function App() {
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [inputText, setInputText] = useState<string>('');
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [typingUsers, setTypingUsers] = useState<User[]>([]);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -62,6 +62,9 @@ export default function App() {
   const [showAnnouncementModal, setShowAnnouncementModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [announcementText, setAnnouncementText] = useState<string>('');
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showScrollButton, setShowScrollButton] = useState<boolean>(false);
 
   const [settings, setSettings] = useState<{ compactMode: boolean; disableSound: boolean }>(() => {
     const saved = localStorage.getItem('pulsechat_settings');
@@ -90,6 +93,7 @@ export default function App() {
   const typingTimeoutRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const isScrolledUpRef = useRef<boolean>(false);
 
   const [previewUsers, setPreviewUsers] = useState<{id: string; name: string; avatar: string; color: string}[]>([]);
 
@@ -202,9 +206,9 @@ export default function App() {
           const { user: typingUser, isTyping } = payload;
           setTypingUsers(prev => {
             if (isTyping) {
-              if (!prev.includes(typingUser.name)) return [...prev, typingUser.name];
+              if (!prev.find(u => u.id === typingUser.id)) return [...prev, typingUser];
             } else {
-              return prev.filter(name => name !== typingUser.name);
+              return prev.filter(u => u.id !== typingUser.id);
             }
             return prev;
           });
@@ -254,11 +258,24 @@ export default function App() {
 
   // Scroll to bottom on new messages and mark seen
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!isScrolledUpRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
     if (joined && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'mark_seen' }));
     }
   }, [messages.length, joined]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const isUp = scrollHeight - scrollTop - clientHeight > 150;
+    isScrolledUpRef.current = isUp;
+    setShowScrollButton(isUp);
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const playPop = () => {
     if (settings.disableSound) return;
@@ -883,7 +900,7 @@ export default function App() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-slate-950">
+      <div className="flex-1 flex flex-col min-w-0 bg-slate-950 relative">
         {/* Chat Header */}
         <div className="h-16 border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
@@ -909,6 +926,16 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => {
+                setIsSearching(!isSearching);
+                if (isSearching) setSearchQuery('');
+              }}
+              className={`p-2 rounded-xl border transition shadow-sm ${isSearching ? 'bg-indigo-600/20 border-indigo-500/30 text-indigo-400' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'}`}
+              title="Search Messages"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            <button
               onClick={() => setShowCreateRoomModal(true)}
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-1.5 transition shadow-sm"
             >
@@ -924,6 +951,40 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* Search Bar */}
+        {isSearching && (
+          <div className="bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center gap-2 shrink-0 animate-in fade-in slide-in-from-top-2 duration-200 shadow-md relative z-10">
+            <div className="relative flex-1 max-w-xl mx-auto flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search messages..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-10 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-inner"
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button 
+              onClick={() => {
+                setIsSearching(false);
+                setSearchQuery('');
+              }}
+              className="text-xs text-slate-400 hover:text-white shrink-0 font-medium px-2"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
 
         {/* Pinned Messages Header Bar */}
         {messages.filter(m => m.isPinned).length > 0 && (
@@ -961,8 +1022,14 @@ export default function App() {
         )}
 
         {/* Message Stream */}
-        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 ${settings.compactMode ? 'space-y-2' : 'space-y-4'}`}>
-          {messages.map((msg) => {
+        <div 
+          className={`flex-1 overflow-y-auto p-4 sm:p-6 ${settings.compactMode ? 'space-y-2' : 'space-y-4'}`}
+          onScroll={handleScroll}
+        >
+          {(isSearching && searchQuery.trim() !== ''
+            ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()) || m.sender.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            : messages
+          ).map((msg) => {
             const isMe = msg.sender.id === user.id;
             const isBot = msg.sender.isBot;
             const isAnnouncement = msg.isAnnouncement;
@@ -1120,18 +1187,47 @@ export default function App() {
 
           {/* Typing Indicator */}
           {typingUsers.length > 0 && (
-            <div className="flex items-center gap-2 text-xs text-slate-400 italic bg-slate-900/40 w-fit px-3 py-2 rounded-xl border border-slate-800/50">
-              <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.4s]" />
+            <div className="flex items-center gap-3 text-xs text-slate-400 italic bg-slate-900/40 w-fit px-3 py-2 rounded-2xl border border-slate-800/50 my-2">
+              <div className="flex items-center -space-x-2">
+                {typingUsers.map((tu, idx) => (
+                  <div 
+                    key={tu.id} 
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border border-slate-800 shadow-sm animate-in fade-in zoom-in duration-300"
+                    style={{ backgroundColor: tu.color, zIndex: typingUsers.length - idx }}
+                    title={tu.name}
+                  >
+                    {tu.avatar}
+                  </div>
+                ))}
+              </div>
+              <span className="flex gap-1 ml-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 animate-bounce" />
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:0.15s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/80 animate-bounce [animation-delay:0.3s]" />
               </span>
-              <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
+              <span>
+                {typingUsers.length === 1 
+                  ? <><strong className="text-slate-300 font-medium not-italic">{typingUsers[0].name}</strong> is typing...</> 
+                  : typingUsers.length === 2 
+                    ? <><strong className="text-slate-300 font-medium not-italic">{typingUsers[0].name}</strong> and <strong className="text-slate-300 font-medium not-italic">{typingUsers[1].name}</strong> are typing...</> 
+                    : <><strong className="text-slate-300 font-medium not-italic">{typingUsers.length} people</strong> are typing...</>}
+              </span>
             </div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Scroll to bottom button */}
+        {showScrollButton && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-28 right-8 z-20 bg-indigo-600/90 hover:bg-indigo-500 text-white p-3 rounded-full shadow-lg shadow-indigo-900/20 border border-indigo-400/30 backdrop-blur-sm transition-all animate-in fade-in slide-in-from-bottom-5 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+            title="Scroll to latest messages"
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
 
         {/* Reply banner if replying */}
         {replyingTo && (
